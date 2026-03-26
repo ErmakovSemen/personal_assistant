@@ -33,3 +33,8 @@
 ```
 
 Если `status=needs_input`, оркестратор должен задать один уточняющий вопрос.
+
+
+## Реализовано в export
+
+В export main workflow добавлена реальная ветка `If Genspark Delegate?` после `Read Notes`. Если сообщение похоже на задачу по улучшению самого ассистента/оркестратора, граф идет в `Run Genspark Delegate` → `Format Delegate Reply` → `Send Reply`. Обычные coach-запросы по-прежнему идут в `Orchestrator Agent`.

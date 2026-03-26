@@ -69,6 +69,35 @@
     },
     {
       "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a2",
+              "name": "userMessage",
+              "value": "={{ $json.body?.message?.text || $json.body?.edited_message?.text || $json.message?.text || $json.edited_message?.text || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a2b",
+              "name": "chatId",
+              "value": "={{ Number($('Telegram Webhook').item.json.body?.message?.chat?.id || $('Telegram Webhook').item.json.body?.edited_message?.chat?.id || $('Telegram Webhook').item.json.message?.chat?.id || $('Telegram Webhook').item.json.edited_message?.chat?.id || $env.TELEGRAM_CHAT_ID) }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7",
+      "name": "Set Text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        720,
+        432
+      ]
+    },
+    {
+      "parameters": {
         "url": "={{ 'https://api.telegram.org/file/bot' + $env.TELEGRAM_BOT_TOKEN + '/' + $json.result.file_path }}",
         "options": {}
       },
@@ -144,80 +173,6 @@
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "a2",
-              "name": "userMessage",
-              "value": "={{ $json.body?.message?.text || $json.body?.edited_message?.text || $json.message?.text || $json.edited_message?.text || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "a2b",
-              "name": "chatId",
-              "value": "={{ Number($('Telegram Webhook').item.json.body?.message?.chat?.id || $('Telegram Webhook').item.json.body?.edited_message?.chat?.id || $('Telegram Webhook').item.json.message?.chat?.id || $('Telegram Webhook').item.json.edited_message?.chat?.id || $env.TELEGRAM_CHAT_ID) }}",
-              "type": "number"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "7",
-      "name": "Set Text",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        720,
-        432
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nfunction clip(value, limit = 1400) {\n  const text = String(value || '');\n  return text.length > limit ? text.slice(0, limit) + '\\n...[truncated]' : text;\n}\n\nfunction readText(filePath, fallback = 'нет данных') {\n  try {\n    return clip(fs.readFileSync(filePath, 'utf8'));\n  } catch (e) {\n    return fallback;\n  }\n}\n\nfunction formatDay(date) {\n  return new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Europe/Moscow',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n  }).format(date);\n}\n\nfunction formatNowRu(date) {\n  return new Intl.DateTimeFormat('ru-RU', {\n    timeZone: 'Europe/Moscow',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    second: '2-digit',\n    hour12: false,\n  }).format(date).replace(',', '');\n}\n\nfunction readRecent(dirPath, limit = 5) {\n  try {\n    const files = fs.readdirSync(dirPath)\n      .filter((f) => f.endsWith('.md') || f.endsWith('.json') || f.endsWith('.txt'))\n      .map((name) => ({\n        name,\n        fullPath: path.join(dirPath, name),\n        mtimeMs: fs.statSync(path.join(dirPath, name)).mtimeMs,\n      }))\n      .sort((a, b) => b.mtimeMs - a.mtimeMs)\n      .slice(0, limit);\n\n    if (!files.length) return 'нет данных';\n\n    return files.map((file) => {\n      let body = 'нет данных';\n      try {\n        body = clip(fs.readFileSync(file.fullPath, 'utf8'), 700);\n      } catch (e) {}\n      return `## ${file.name}\\n${body}`;\n    }).join('\\n\\n---\\n\\n');\n  } catch (e) {\n    return 'нет данных';\n  }\n}\n\nconst incoming = $input.first().json || {};\nconst webhookJson = $('Telegram Webhook').item.json || {};\nconst telegramMessage = webhookJson.body?.message || webhookJson.body?.edited_message || webhookJson.message || webhookJson.edited_message || {};\nconst now = new Date();\nconst todayStr = formatDay(now);\nconst yesterdayStr = formatDay(new Date(now.getTime() - 86400000));\n\nreturn [{\n  json: {\n    ...incoming,\n    chatId: incoming.chatId || Number(telegramMessage.chat?.id) || Number($env.TELEGRAM_CHAT_ID),\n    todayStr,\n    yesterdayStr,\n    nowMoscow: formatNowRu(now) + ' MSK',\n    messageKind: telegramMessage.voice ? 'voice' : 'text',\n    todayNote: readText('/obsidian/Daily Notes/' + todayStr + '.md'),\n    yesterdayNote: readText('/obsidian/Daily Notes/' + yesterdayStr + '.md'),\n    recentTasks: readRecent('/obsidian/Tasks', 5),\n    recentIdeas: readRecent('/obsidian/Ideas', 5),\n    recentProjects: readRecent('/obsidian/Projects', 4),\n    userMemory: readRecent('/obsidian/System/User Memory', 4),\n  }\n}];"
-      },
-      "id": "9",
-      "name": "Read Notes",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 1,
-      "position": [
-        1920,
-        304
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({chat_id:Number($json.chatId || $env.TELEGRAM_CHAT_ID), text: (typeof $json.reply === 'string' && $json.reply.trim()) ? $json.reply : 'Ок.'}) }}",
-        "options": {}
-      },
-      "id": "12",
-      "name": "Send Reply",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        3392,
-        304
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const main = async () => {\nconst fs = require('fs');\nconst path = require('path');\nconst https = require('https');\nconst { URL } = require('url');\n\nconst ROOT = '/obsidian';\nconst item = $input.first().json || {};\nconst API_KEY = $env.OPENROUTER_API_KEY;\nconst BASE_URL = ($env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\\/$/, '');\nconst MODEL = $env.OPENROUTER_MODEL || 'google/gemini-2.5-pro';\nconst MAX_TOOL_ITERS = 6;\n\nfunction clip(value, limit = 4000) {\n  const text = String(value || '');\n  return text.length > limit ? text.slice(0, limit) + '\\n...[truncated]' : text;\n}\n\nfunction relFromAbs(absPath) {\n  return path.relative(ROOT, absPath).replace(/\\\\/g, '/');\n}\n\nfunction resolveVaultPath(inputPath) {\n  const requested = String(inputPath || '').replace(/\\\\/g, '/').replace(/^\\/obsidian\\/?/, '').replace(/^\\/+/, '');\n  const abs = path.resolve(ROOT, requested || '.');\n  const rootResolved = path.resolve(ROOT);\n  if (!(abs === rootResolved || abs.startsWith(rootResolved + path.sep))) {\n    throw new Error('Path escapes /obsidian');\n  }\n  return abs;\n}\n\nfunction ensureDirFor(absPath) {\n  fs.mkdirSync(path.dirname(absPath), { recursive: true });\n}\n\nfunction backupIfExists(absPath) {\n  if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) return null;\n  const backupsDir = path.join(ROOT, 'System', 'backups');\n  fs.mkdirSync(backupsDir, { recursive: true });\n  const rel = relFromAbs(absPath).replace(/[\\/]/g, '__');\n  const stamp = new Date().toISOString().replace(/[:.]/g, '-');\n  const backupPath = path.join(backupsDir, `${stamp}__${rel}`);\n  fs.copyFileSync(absPath, backupPath);\n  return '/obsidian/' + relFromAbs(backupPath);\n}\n\nfunction appendActionLog(entry) {\n  const logPath = path.join(ROOT, 'System', 'action-log.jsonl');\n  fs.mkdirSync(path.dirname(logPath), { recursive: true });\n  const payload = {\n    ts: new Date().toISOString(),\n    ...entry,\n  };\n  fs.appendFileSync(logPath, JSON.stringify(payload, ensureAsciiSafe) + '\\n', 'utf8');\n}\n\nfunction ensureAsciiSafe(key, value) {\n  if (typeof value === 'string' && value.length > 8000) return value.slice(0, 8000) + '...[truncated]';\n  return value;\n}\n\nfunction scanFiles(startAbs, depth = 4, out = [], currentDepth = 0) {\n  if (out.length > 400) return out;\n  let entries = [];\n  try { entries = fs.readdirSync(startAbs, { withFileTypes: true }); } catch (e) { return out; }\n  for (const entry of entries) {\n    if (out.length > 400) break;\n    const full = path.join(startAbs, entry.name);\n    if (entry.isDirectory()) {\n      if (currentDepth < depth && !['.git', 'node_modules'].includes(entry.name)) {\n        scanFiles(full, depth, out, currentDepth + 1);\n      }\n    } else if (entry.isFile()) {\n      out.push(full);\n    }\n  }\n  return out;\n}\n\nfunction obsidianListDir(args = {}) {\n  const abs = resolveVaultPath(args.path || '.');\n  const recursive = !!args.recursive;\n  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 200);\n  if (recursive) {\n    const files = scanFiles(abs, Number(args.depth || 3)).slice(0, limit).map((full) => ({\n      path: '/obsidian/' + relFromAbs(full),\n      type: fs.statSync(full).isDirectory() ? 'directory' : 'file',\n    }));\n    return { path: '/obsidian/' + relFromAbs(abs), entries: files };\n  }\n  const entries = fs.readdirSync(abs, { withFileTypes: true })\n    .slice(0, limit)\n    .map((entry) => {\n      const full = path.join(abs, entry.name);\n      const stat = fs.statSync(full);\n      return {\n        name: entry.name,\n        path: '/obsidian/' + relFromAbs(full),\n        type: entry.isDirectory() ? 'directory' : 'file',\n        size: stat.size,\n        mtime: stat.mtime.toISOString(),\n      };\n    });\n  return { path: '/obsidian/' + relFromAbs(abs), entries };\n}\n\nfunction obsidianReadFile(args = {}) {\n  const abs = resolveVaultPath(args.path || '');\n  const stat = fs.statSync(abs);\n  if (!stat.isFile()) throw new Error('Not a file');\n  const maxChars = Math.min(Math.max(Number(args.max_chars || 6000), 200), 30000);\n  const text = fs.readFileSync(abs, 'utf8');\n  return {\n    path: '/obsidian/' + relFromAbs(abs),\n    size: stat.size,\n    content: clip(text, maxChars),\n  };\n}\n\nfunction obsidianSearch(args = {}) {\n  const query = String(args.query || '').trim().toLowerCase();\n  const limit = Math.min(Math.max(Number(args.limit || 8), 1), 20);\n  const start = resolveVaultPath(args.path || '.');\n  const files = scanFiles(start, Number(args.depth || 4));\n  const matches = [];\n  for (const full of files) {\n    if (matches.length >= limit) break;\n    let stat;\n    try { stat = fs.statSync(full); } catch (e) { continue; }\n    if (!stat.isFile()) continue;\n    if (stat.size > 500000) continue;\n    const rel = '/obsidian/' + relFromAbs(full);\n    const name = path.basename(full).toLowerCase();\n    let hay = name;\n    let body = '';\n    try {\n      if (/\\.(md|txt|json)$/i.test(full)) {\n        body = fs.readFileSync(full, 'utf8');\n        hay += '\\n' + body.toLowerCase();\n      }\n    } catch (e) {}\n    if (!query || hay.includes(query)) {\n      const idx = query ? hay.indexOf(query) : 0;\n      const previewSource = body || name;\n      const preview = query && idx >= 0\n        ? clip(previewSource.slice(Math.max(0, idx - 180), idx + 380), 700)\n        : clip(previewSource, 700);\n      matches.push({ path: rel, name: path.basename(full), preview, mtime: stat.mtime.toISOString() });\n    }\n  }\n  return { query, matches };\n}\n\nfunction obsidianWriteFile(args = {}) {\n  const abs = resolveVaultPath(args.path || '');\n  const content = String(args.content || '');\n  ensureDirFor(abs);\n  const backup = backupIfExists(abs);\n  fs.writeFileSync(abs, content, 'utf8');\n  return { ok: true, path: '/obsidian/' + relFromAbs(abs), bytes: Buffer.byteLength(content, 'utf8'), backup };\n}\n\nfunction obsidianAppendFile(args = {}) {\n  const abs = resolveVaultPath(args.path || '');\n  const content = String(args.content || '');\n  ensureDirFor(abs);\n  if (!fs.existsSync(abs)) {\n    fs.writeFileSync(abs, content, 'utf8');\n    return { ok: true, path: '/obsidian/' + relFromAbs(abs), mode: 'create', bytes: Buffer.byteLength(content, 'utf8') };\n  }\n  backupIfExists(abs);\n  fs.appendFileSync(abs, content, 'utf8');\n  return { ok: true, path: '/obsidian/' + relFromAbs(abs), mode: 'append', bytes: Buffer.byteLength(content, 'utf8') };\n}\n\nfunction readJsonFile(absPath, fallback) {\n  try {\n    return JSON.parse(fs.readFileSync(absPath, 'utf8'));\n  } catch (e) {\n    return fallback;\n  }\n}\n\nfunction reminderUpsert(args = {}) {\n  const registryPath = path.join(ROOT, 'System', 'reminders.json');\n  fs.mkdirSync(path.dirname(registryPath), { recursive: true });\n  const registry = readJsonFile(registryPath, { version: 1, updated_at: null, items: [] });\n  const now = new Date().toISOString();\n  const item = {\n    id: String(args.id || `rem-${Date.now()}`),\n    status: String(args.status || 'scheduled'),\n    scheduled_for: String(args.scheduled_for || ''),\n    purpose: String(args.purpose || ''),\n    message: args.message == null ? null : String(args.message),\n    object_ref: args.object_ref || null,\n    ask_for_status: !!args.ask_for_status,\n    updated_at: now,\n    created_at: now,\n    meta: args.meta || {},\n  };\n  const idx = registry.items.findIndex((x) => x.id === item.id);\n  if (idx >= 0) {\n    item.created_at = registry.items[idx].created_at || now;\n    registry.items[idx] = { ...registry.items[idx], ...item, updated_at: now };\n  } else {\n    registry.items.push(item);\n  }\n  registry.updated_at = now;\n  backupIfExists(registryPath);\n  fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2), 'utf8');\n  return { ok: true, reminder_id: item.id, registry_path: '/obsidian/System/reminders.json' };\n}\n\nfunction summarizeToolResult(name, result) {\n  if (name === 'obsidian_read_file') return { path: result.path, size: result.size, content: clip(result.content, 2000) };\n  if (name === 'obsidian_search') return { query: result.query, matches: (result.matches || []).slice(0, 5) };\n  if (name === 'obsidian_list_dir') return { path: result.path, entries: (result.entries || []).slice(0, 20) };\n  return result;\n}\n\nfunction apiRequest(payload) {\n  return new Promise((resolve, reject) => {\n    const url = new URL(BASE_URL + '/chat/completions');\n    const body = JSON.stringify(payload);\n    const req = https.request({\n      protocol: url.protocol,\n      hostname: url.hostname,\n      port: url.port || 443,\n      path: url.pathname + url.search,\n      method: 'POST',\n      headers: {\n        'Authorization': 'Bearer ' + API_KEY,\n        'Content-Type': 'application/json',\n        'Content-Length': Buffer.byteLength(body),\n      },\n      timeout: 120000,\n    }, (res) => {\n      let data = '';\n      res.on('data', (chunk) => data += chunk);\n      res.on('end', () => {\n        if (res.statusCode >= 400) {\n          reject(new Error('OpenRouter ' + res.statusCode + ': ' + data.slice(0, 2000)));\n          return;\n        }\n        try {\n          resolve(JSON.parse(data));\n        } catch (e) {\n          reject(e);\n        }\n      });\n    });\n    req.on('error', reject);\n    req.on('timeout', () => req.destroy(new Error('OpenRouter timeout')));\n    req.write(body);\n    req.end();\n  });\n}\n\nconst tools = [\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_search',\n      description: 'Search files in /obsidian when context is missing or user refers to previous notes, tasks, ideas, projects, or memories.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          query: { type: 'string' },\n          path: { type: 'string' },\n          depth: { type: 'integer' },\n          limit: { type: 'integer' }\n        },\n        required: ['query']\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_read_file',\n      description: 'Read any file from /obsidian when you need exact content.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          path: { type: 'string' },\n          max_chars: { type: 'integer' }\n        },\n        required: ['path']\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_list_dir',\n      description: 'List files and directories inside /obsidian to discover available notes and folders.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          path: { type: 'string' },\n          recursive: { type: 'boolean' },\n          depth: { type: 'integer' },\n          limit: { type: 'integer' }\n        }\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_write_file',\n      description: 'Write or overwrite any file inside /obsidian. Use when you want to create a note in a specific folder or replace a file fully.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          path: { type: 'string' },\n          content: { type: 'string' }\n        },\n        required: ['path', 'content']\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_append_file',\n      description: 'Append content to an existing file inside /obsidian or create it if missing.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          path: { type: 'string' },\n          content: { type: 'string' }\n        },\n        required: ['path', 'content']\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'reminder_upsert',\n      description: 'Create or update a reminder inside /obsidian/System/reminders.json for future scheduler use.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          id: { type: 'string' },\n          status: { type: 'string' },\n          scheduled_for: { type: 'string' },\n          purpose: { type: 'string' },\n          message: { type: ['string', 'null'] },\n          object_ref: { type: ['object', 'null'] },\n          ask_for_status: { type: 'boolean' },\n          meta: { type: 'object' }\n        },\n        required: ['scheduled_for', 'purpose']\n      }\n    }\n  }\n];\n\nasync function runTool(name, args) {\n  if (name === 'obsidian_search') return obsidianSearch(args);\n  if (name === 'obsidian_read_file') return obsidianReadFile(args);\n  if (name === 'obsidian_list_dir') return obsidianListDir(args);\n  if (name === 'obsidian_write_file') return obsidianWriteFile(args);\n  if (name === 'obsidian_append_file') return obsidianAppendFile(args);\n  if (name === 'reminder_upsert') return reminderUpsert(args);\n  throw new Error('Unknown tool: ' + name);\n}\n\nfunction normalizeRawContent(content) {\n  if (Array.isArray(content)) {\n    return content.map((part) => typeof part === 'string' ? part : (part?.text || JSON.stringify(part))).join('');\n  }\n  if (content && typeof content === 'object') return content.text || content.content || JSON.stringify(content);\n  return String(content || '');\n}\n\nfunction parseFinalJson(rawText) {\n  const txt = String(rawText || '').trim();\n  if (!txt) return null;\n  try { return JSON.parse(txt); } catch (e) {}\n  const fenced = txt.match(/```(?:json)?\\n?([\\s\\S]*?)```/i);\n  if (fenced) {\n    try { return JSON.parse(fenced[1]); } catch (e) {}\n  }\n  const start = txt.indexOf('{');\n  const end = txt.lastIndexOf('}');\n  if (start >= 0 && end > start) {\n    try { return JSON.parse(txt.slice(start, end + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nconst liteContext = {\n  now_moscow: item.nowMoscow,\n  today: item.todayStr,\n  yesterday: item.yesterdayStr,\n  user_message: item.userMessage || '',\n  message_kind: item.messageKind || 'text',\n  today_note: item.todayNote || 'нет данных',\n  yesterday_note: item.yesterdayNote || 'нет данных',\n  recent_tasks: item.recentTasks || 'нет данных',\n  recent_ideas: item.recentIdeas || 'нет данных',\n  recent_projects: item.recentProjects || 'нет данных',\n  user_memory: item.userMemory || 'нет данных',\n};\n\nconst systemPrompt = `Ты главный оркестратор персонального Telegram-ассистента Семёна.\n\nТвои обязанности:\n- понять, что хочет пользователь;\n- если не хватает контекста, СНАЧАЛА идти читать/искать в Obsidian через tools;\n- если пользователь просит что-то записать, выбрать нужную папку и записать это в Obsidian через tools;\n- если ты видишь важное устойчивое знание о пользователе, проекте, задаче, обязательстве или идее, сохранить это в Obsidian;\n- при необходимости создать reminder через reminder_upsert;\n- отвечать коротко, по делу, без лишней мотивационной болтовни.\n\nУ тебя есть широкий доступ к vault внутри /obsidian: ты можешь читать и писать любые файлы внутри этого vault через tools.\nПредпочтительные папки:\n- /obsidian/Daily Notes/\n- /obsidian/Tasks/\n- /obsidian/Ideas/\n- /obsidian/Projects/\n- /obsidian/System/User Memory/\n\nКогда нужно использовать tools:\n- пользователь говорит «посмотри, что я писал/мы обсуждали/что там по проекту»;\n- в сообщении есть местоимения или ссылки без явного контекста («это», «тот проект», «по резюме»);\n- нужно проверить, не записано ли уже что-то;\n- нужно сохранить важное знание, идею, проектную информацию, задачу, дневниковую запись.\n\nФинальный ответ, когда tools больше не нужны, верни ТОЛЬКО JSON-объект без markdown и без пояснений:\n{\n  \"reply\": \"сообщение пользователю\",\n  \"schedule\": {\"datetime\": \"RFC3339 или null\", \"message\": \"текст или null\"} | null,\n  \"summary\": \"что было сделано кратко\"\n}\n\nЕсли напоминание уже было создано через reminder_upsert, schedule можно вернуть null.\nЕсли напоминание нужно через старый встроенный механизм, верни schedule с RFC3339 (+03:00).\nНе выдумывай несуществующие факты.`;\n\nconst messages = [\n  { role: 'system', content: systemPrompt },\n  { role: 'user', content: JSON.stringify(liteContext, null, 2) }\n];\n\nlet toolCallsUsed = 0;\nlet lastText = '';\nconst toolAudit = [];\n\nfor (let i = 0; i < MAX_TOOL_ITERS; i++) {\n  const response = await apiRequest({\n    model: MODEL,\n    temperature: 0.2,\n    tools,\n    tool_choice: 'auto',\n    messages,\n  });\n  const message = response?.choices?.[0]?.message || {};\n  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];\n  if (toolCalls.length) {\n    toolCallsUsed += toolCalls.length;\n    messages.push({ role: 'assistant', content: message.content || '', tool_calls: toolCalls });\n    for (const call of toolCalls) {\n      let args = {};\n      try { args = JSON.parse(call.function?.arguments || '{}'); } catch (e) { args = {}; }\n      let result;\n      try {\n        result = await runTool(call.function.name, args);\n        appendActionLog({ execution: 'orchestrator', tool: call.function.name, args, result: summarizeToolResult(call.function.name, result) });\n        toolAudit.push({ tool: call.function.name, args, result: summarizeToolResult(call.function.name, result) });\n      } catch (e) {\n        result = { error: e.message };\n        appendActionLog({ execution: 'orchestrator', tool: call.function.name, args, error: e.message });\n        toolAudit.push({ tool: call.function.name, args, result });\n      }\n      messages.push({\n        role: 'tool',\n        tool_call_id: call.id,\n        name: call.function.name,\n        content: JSON.stringify(result),\n      });\n    }\n    continue;\n  }\n  lastText = normalizeRawContent(message.content || '');\n  messages.push({ role: 'assistant', content: lastText });\n  break;\n}\n\nconst parsed = parseFinalJson(lastText) || {};\nconst fallbackReply = lastText && !lastText.trim().startsWith('{')\n  ? lastText.trim()\n  : 'Принял. Я обработал сообщение и зафиксировал нужный контекст.';\n\nlet schedule = null;\nif (parsed.schedule && parsed.schedule.datetime && parsed.schedule.message) {\n  let dt = String(parsed.schedule.datetime).trim().replace(' ', 'T');\n  if (/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(dt)) dt += ':00';\n  if (/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$/.test(dt)) dt += '+03:00';\n  if (Number.isFinite(Date.parse(dt))) {\n    schedule = { datetime: dt, message: String(parsed.schedule.message).trim() };\n  }\n}\n\nreturn [{\n  json: {\n    chatId: Number(item.chatId || $env.TELEGRAM_CHAT_ID),\n    reply: String(parsed.reply || fallbackReply || 'Ок.'),\n    schedule,\n    toolAudit,\n    orchestratorSummary: parsed.summary || null,\n    toolCallsUsed,\n  }\n}];\n};\n\nreturn main();"
-      },
-      "id": "14",
-      "name": "Orchestrator Agent",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2144,
-        640
-      ]
-    },
-    {
-      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true
@@ -248,6 +203,155 @@
     },
     {
       "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\n\nfunction clip(value, limit = 1400) {\n  const text = String(value || '');\n  return text.length > limit ? text.slice(0, limit) + '\\n...[truncated]' : text;\n}\n\nfunction readText(filePath, fallback = 'нет данных') {\n  try {\n    return clip(fs.readFileSync(filePath, 'utf8'));\n  } catch (e) {\n    return fallback;\n  }\n}\n\nfunction formatDay(date) {\n  return new Intl.DateTimeFormat('en-CA', {\n    timeZone: 'Europe/Moscow',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n  }).format(date);\n}\n\nfunction formatNowRu(date) {\n  return new Intl.DateTimeFormat('ru-RU', {\n    timeZone: 'Europe/Moscow',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n    hour: '2-digit',\n    minute: '2-digit',\n    second: '2-digit',\n    hour12: false,\n  }).format(date).replace(',', '');\n}\n\nfunction readRecent(dirPath, limit = 5) {\n  try {\n    const files = fs.readdirSync(dirPath)\n      .filter((f) => f.endsWith('.md') || f.endsWith('.json') || f.endsWith('.txt'))\n      .map((name) => ({\n        name,\n        fullPath: path.join(dirPath, name),\n        mtimeMs: fs.statSync(path.join(dirPath, name)).mtimeMs,\n      }))\n      .sort((a, b) => b.mtimeMs - a.mtimeMs)\n      .slice(0, limit);\n\n    if (!files.length) return 'нет данных';\n\n    return files.map((file) => {\n      let body = 'нет данных';\n      try {\n        body = clip(fs.readFileSync(file.fullPath, 'utf8'), 700);\n      } catch (e) {}\n      return `## ${file.name}\\n${body}`;\n    }).join('\\n\\n---\\n\\n');\n  } catch (e) {\n    return 'нет данных';\n  }\n}\n\nconst incoming = $input.first().json || {};\nconst webhookJson = $('Telegram Webhook').item.json || {};\nconst telegramMessage = webhookJson.body?.message || webhookJson.body?.edited_message || webhookJson.message || webhookJson.edited_message || {};\nconst now = new Date();\nconst todayStr = formatDay(now);\nconst yesterdayStr = formatDay(new Date(now.getTime() - 86400000));\n\nreturn [{\n  json: {\n    ...incoming,\n    chatId: incoming.chatId || Number(telegramMessage.chat?.id) || Number($env.TELEGRAM_CHAT_ID),\n    todayStr,\n    yesterdayStr,\n    nowMoscow: formatNowRu(now) + ' MSK',\n    messageKind: telegramMessage.voice ? 'voice' : 'text',\n    todayNote: readText('/obsidian/Daily Notes/' + todayStr + '.md'),\n    yesterdayNote: readText('/obsidian/Daily Notes/' + yesterdayStr + '.md'),\n    recentTasks: readRecent('/obsidian/Tasks', 5),\n    recentIdeas: readRecent('/obsidian/Ideas', 5),\n    recentProjects: readRecent('/obsidian/Projects', 4),\n    userMemory: readRecent('/obsidian/System/User Memory', 4),\n  }\n}];"
+      },
+      "id": "9",
+      "name": "Read Notes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "genspark_delegate_meta_1",
+              "leftValue": "={{ (() => { const text = String($json.userMessage || '').toLowerCase(); const hasAction = /(доработ|улучш|исправ|почин|обнов|перепиш|рефактор|добав|интегр|встро|реализ|протест|проверь|debug|fix|patch|refactor|improve|update)/i.test(text); const hasTarget = /(ассистент|агент|оркестратор|workflow|воркфлоу|n8n|нод|узел|node|промпт|pipeline|пайплайн|telegram|телеграм|obsidian|подграф|sub-?workflow|delegate|genspark)/i.test(text); return hasAction && hasTarget ? 'delegate' : ''; })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "genspark_if_meta_delegate",
+      "name": "If Genspark Delegate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2144,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const main = async () => {\nconst fs = require('fs');\nconst path = require('path');\nconst https = require('https');\nconst { URL } = require('url');\n\nconst ROOT = '/obsidian';\nconst item = $input.first().json || {};\nconst API_KEY = $env.OPENROUTER_API_KEY;\nconst BASE_URL = ($env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\\/$/, '');\nconst MODEL = $env.OPENROUTER_MODEL || 'google/gemini-2.5-pro';\nconst MAX_TOOL_ITERS = 6;\n\nfunction clip(value, limit = 4000) {\n  const text = String(value || '');\n  return text.length > limit ? text.slice(0, limit) + '\\n...[truncated]' : text;\n}\n\nfunction relFromAbs(absPath) {\n  return path.relative(ROOT, absPath).replace(/\\\\/g, '/');\n}\n\nfunction resolveVaultPath(inputPath) {\n  const requested = String(inputPath || '').replace(/\\\\/g, '/').replace(/^\\/obsidian\\/?/, '').replace(/^\\/+/, '');\n  const abs = path.resolve(ROOT, requested || '.');\n  const rootResolved = path.resolve(ROOT);\n  if (!(abs === rootResolved || abs.startsWith(rootResolved + path.sep))) {\n    throw new Error('Path escapes /obsidian');\n  }\n  return abs;\n}\n\nfunction ensureDirFor(absPath) {\n  fs.mkdirSync(path.dirname(absPath), { recursive: true });\n}\n\nfunction backupIfExists(absPath) {\n  if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) return null;\n  const backupsDir = path.join(ROOT, 'System', 'backups');\n  fs.mkdirSync(backupsDir, { recursive: true });\n  const rel = relFromAbs(absPath).replace(/[\\/]/g, '__');\n  const stamp = new Date().toISOString().replace(/[:.]/g, '-');\n  const backupPath = path.join(backupsDir, `${stamp}__${rel}`);\n  fs.copyFileSync(absPath, backupPath);\n  return '/obsidian/' + relFromAbs(backupPath);\n}\n\nfunction appendActionLog(entry) {\n  const logPath = path.join(ROOT, 'System', 'action-log.jsonl');\n  fs.mkdirSync(path.dirname(logPath), { recursive: true });\n  const payload = {\n    ts: new Date().toISOString(),\n    ...entry,\n  };\n  fs.appendFileSync(logPath, JSON.stringify(payload, ensureAsciiSafe) + '\\n', 'utf8');\n}\n\nfunction ensureAsciiSafe(key, value) {\n  if (typeof value === 'string' && value.length > 8000) return value.slice(0, 8000) + '...[truncated]';\n  return value;\n}\n\nfunction scanFiles(startAbs, depth = 4, out = [], currentDepth = 0) {\n  if (out.length > 400) return out;\n  let entries = [];\n  try { entries = fs.readdirSync(startAbs, { withFileTypes: true }); } catch (e) { return out; }\n  for (const entry of entries) {\n    if (out.length > 400) break;\n    const full = path.join(startAbs, entry.name);\n    if (entry.isDirectory()) {\n      if (currentDepth < depth && !['.git', 'node_modules'].includes(entry.name)) {\n        scanFiles(full, depth, out, currentDepth + 1);\n      }\n    } else if (entry.isFile()) {\n      out.push(full);\n    }\n  }\n  return out;\n}\n\nfunction obsidianListDir(args = {}) {\n  const abs = resolveVaultPath(args.path || '.');\n  const recursive = !!args.recursive;\n  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 200);\n  if (recursive) {\n    const files = scanFiles(abs, Number(args.depth || 3)).slice(0, limit).map((full) => ({\n      path: '/obsidian/' + relFromAbs(full),\n      type: fs.statSync(full).isDirectory() ? 'directory' : 'file',\n    }));\n    return { path: '/obsidian/' + relFromAbs(abs), entries: files };\n  }\n  const entries = fs.readdirSync(abs, { withFileTypes: true })\n    .slice(0, limit)\n    .map((entry) => {\n      const full = path.join(abs, entry.name);\n      const stat = fs.statSync(full);\n      return {\n        name: entry.name,\n        path: '/obsidian/' + relFromAbs(full),\n        type: entry.isDirectory() ? 'directory' : 'file',\n        size: stat.size,\n        mtime: stat.mtime.toISOString(),\n      };\n    });\n  return { path: '/obsidian/' + relFromAbs(abs), entries };\n}\n\nfunction obsidianReadFile(args = {}) {\n  const abs = resolveVaultPath(args.path || '');\n  const stat = fs.statSync(abs);\n  if (!stat.isFile()) throw new Error('Not a file');\n  const maxChars = Math.min(Math.max(Number(args.max_chars || 6000), 200), 30000);\n  const text = fs.readFileSync(abs, 'utf8');\n  return {\n    path: '/obsidian/' + relFromAbs(abs),\n    size: stat.size,\n    content: clip(text, maxChars),\n  };\n}\n\nfunction obsidianSearch(args = {}) {\n  const query = String(args.query || '').trim().toLowerCase();\n  const limit = Math.min(Math.max(Number(args.limit || 8), 1), 20);\n  const start = resolveVaultPath(args.path || '.');\n  const files = scanFiles(start, Number(args.depth || 4));\n  const matches = [];\n  for (const full of files) {\n    if (matches.length >= limit) break;\n    let stat;\n    try { stat = fs.statSync(full); } catch (e) { continue; }\n    if (!stat.isFile()) continue;\n    if (stat.size > 500000) continue;\n    const rel = '/obsidian/' + relFromAbs(full);\n    const name = path.basename(full).toLowerCase();\n    let hay = name;\n    let body = '';\n    try {\n      if (/\\.(md|txt|json)$/i.test(full)) {\n        body = fs.readFileSync(full, 'utf8');\n        hay += '\\n' + body.toLowerCase();\n      }\n    } catch (e) {}\n    if (!query || hay.includes(query)) {\n      const idx = query ? hay.indexOf(query) : 0;\n      const previewSource = body || name;\n      const preview = query && idx >= 0\n        ? clip(previewSource.slice(Math.max(0, idx - 180), idx + 380), 700)\n        : clip(previewSource, 700);\n      matches.push({ path: rel, name: path.basename(full), preview, mtime: stat.mtime.toISOString() });\n    }\n  }\n  return { query, matches };\n}\n\nfunction obsidianWriteFile(args = {}) {\n  const abs = resolveVaultPath(args.path || '');\n  const content = String(args.content || '');\n  ensureDirFor(abs);\n  const backup = backupIfExists(abs);\n  fs.writeFileSync(abs, content, 'utf8');\n  return { ok: true, path: '/obsidian/' + relFromAbs(abs), bytes: Buffer.byteLength(content, 'utf8'), backup };\n}\n\nfunction obsidianAppendFile(args = {}) {\n  const abs = resolveVaultPath(args.path || '');\n  const content = String(args.content || '');\n  ensureDirFor(abs);\n  if (!fs.existsSync(abs)) {\n    fs.writeFileSync(abs, content, 'utf8');\n    return { ok: true, path: '/obsidian/' + relFromAbs(abs), mode: 'create', bytes: Buffer.byteLength(content, 'utf8') };\n  }\n  backupIfExists(abs);\n  fs.appendFileSync(abs, content, 'utf8');\n  return { ok: true, path: '/obsidian/' + relFromAbs(abs), mode: 'append', bytes: Buffer.byteLength(content, 'utf8') };\n}\n\nfunction readJsonFile(absPath, fallback) {\n  try {\n    return JSON.parse(fs.readFileSync(absPath, 'utf8'));\n  } catch (e) {\n    return fallback;\n  }\n}\n\nfunction reminderUpsert(args = {}) {\n  const registryPath = path.join(ROOT, 'System', 'reminders.json');\n  fs.mkdirSync(path.dirname(registryPath), { recursive: true });\n  const registry = readJsonFile(registryPath, { version: 1, updated_at: null, items: [] });\n  const now = new Date().toISOString();\n  const item = {\n    id: String(args.id || `rem-${Date.now()}`),\n    status: String(args.status || 'scheduled'),\n    scheduled_for: String(args.scheduled_for || ''),\n    purpose: String(args.purpose || ''),\n    message: args.message == null ? null : String(args.message),\n    object_ref: args.object_ref || null,\n    ask_for_status: !!args.ask_for_status,\n    updated_at: now,\n    created_at: now,\n    meta: args.meta || {},\n  };\n  const idx = registry.items.findIndex((x) => x.id === item.id);\n  if (idx >= 0) {\n    item.created_at = registry.items[idx].created_at || now;\n    registry.items[idx] = { ...registry.items[idx], ...item, updated_at: now };\n  } else {\n    registry.items.push(item);\n  }\n  registry.updated_at = now;\n  backupIfExists(registryPath);\n  fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2), 'utf8');\n  return { ok: true, reminder_id: item.id, registry_path: '/obsidian/System/reminders.json' };\n}\n\nfunction summarizeToolResult(name, result) {\n  if (name === 'obsidian_read_file') return { path: result.path, size: result.size, content: clip(result.content, 2000) };\n  if (name === 'obsidian_search') return { query: result.query, matches: (result.matches || []).slice(0, 5) };\n  if (name === 'obsidian_list_dir') return { path: result.path, entries: (result.entries || []).slice(0, 20) };\n  return result;\n}\n\nfunction apiRequest(payload) {\n  return new Promise((resolve, reject) => {\n    const url = new URL(BASE_URL + '/chat/completions');\n    const body = JSON.stringify(payload);\n    const req = https.request({\n      protocol: url.protocol,\n      hostname: url.hostname,\n      port: url.port || 443,\n      path: url.pathname + url.search,\n      method: 'POST',\n      headers: {\n        'Authorization': 'Bearer ' + API_KEY,\n        'Content-Type': 'application/json',\n        'Content-Length': Buffer.byteLength(body),\n      },\n      timeout: 120000,\n    }, (res) => {\n      let data = '';\n      res.on('data', (chunk) => data += chunk);\n      res.on('end', () => {\n        if (res.statusCode >= 400) {\n          reject(new Error('OpenRouter ' + res.statusCode + ': ' + data.slice(0, 2000)));\n          return;\n        }\n        try {\n          resolve(JSON.parse(data));\n        } catch (e) {\n          reject(e);\n        }\n      });\n    });\n    req.on('error', reject);\n    req.on('timeout', () => req.destroy(new Error('OpenRouter timeout')));\n    req.write(body);\n    req.end();\n  });\n}\n\nconst tools = [\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_search',\n      description: 'Search files in /obsidian when context is missing or user refers to previous notes, tasks, ideas, projects, or memories.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          query: { type: 'string' },\n          path: { type: 'string' },\n          depth: { type: 'integer' },\n          limit: { type: 'integer' }\n        },\n        required: ['query']\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_read_file',\n      description: 'Read any file from /obsidian when you need exact content.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          path: { type: 'string' },\n          max_chars: { type: 'integer' }\n        },\n        required: ['path']\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_list_dir',\n      description: 'List files and directories inside /obsidian to discover available notes and folders.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          path: { type: 'string' },\n          recursive: { type: 'boolean' },\n          depth: { type: 'integer' },\n          limit: { type: 'integer' }\n        }\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_write_file',\n      description: 'Write or overwrite any file inside /obsidian. Use when you want to create a note in a specific folder or replace a file fully.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          path: { type: 'string' },\n          content: { type: 'string' }\n        },\n        required: ['path', 'content']\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'obsidian_append_file',\n      description: 'Append content to an existing file inside /obsidian or create it if missing.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          path: { type: 'string' },\n          content: { type: 'string' }\n        },\n        required: ['path', 'content']\n      }\n    }\n  },\n  {\n    type: 'function',\n    function: {\n      name: 'reminder_upsert',\n      description: 'Create or update a reminder inside /obsidian/System/reminders.json for future scheduler use.',\n      parameters: {\n        type: 'object',\n        additionalProperties: false,\n        properties: {\n          id: { type: 'string' },\n          status: { type: 'string' },\n          scheduled_for: { type: 'string' },\n          purpose: { type: 'string' },\n          message: { type: ['string', 'null'] },\n          object_ref: { type: ['object', 'null'] },\n          ask_for_status: { type: 'boolean' },\n          meta: { type: 'object' }\n        },\n        required: ['scheduled_for', 'purpose']\n      }\n    }\n  }\n];\n\nasync function runTool(name, args) {\n  if (name === 'obsidian_search') return obsidianSearch(args);\n  if (name === 'obsidian_read_file') return obsidianReadFile(args);\n  if (name === 'obsidian_list_dir') return obsidianListDir(args);\n  if (name === 'obsidian_write_file') return obsidianWriteFile(args);\n  if (name === 'obsidian_append_file') return obsidianAppendFile(args);\n  if (name === 'reminder_upsert') return reminderUpsert(args);\n  throw new Error('Unknown tool: ' + name);\n}\n\nfunction normalizeRawContent(content) {\n  if (Array.isArray(content)) {\n    return content.map((part) => typeof part === 'string' ? part : (part?.text || JSON.stringify(part))).join('');\n  }\n  if (content && typeof content === 'object') return content.text || content.content || JSON.stringify(content);\n  return String(content || '');\n}\n\nfunction parseFinalJson(rawText) {\n  const txt = String(rawText || '').trim();\n  if (!txt) return null;\n  try { return JSON.parse(txt); } catch (e) {}\n  const fenced = txt.match(/```(?:json)?\\n?([\\s\\S]*?)```/i);\n  if (fenced) {\n    try { return JSON.parse(fenced[1]); } catch (e) {}\n  }\n  const start = txt.indexOf('{');\n  const end = txt.lastIndexOf('}');\n  if (start >= 0 && end > start) {\n    try { return JSON.parse(txt.slice(start, end + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nconst liteContext = {\n  now_moscow: item.nowMoscow,\n  today: item.todayStr,\n  yesterday: item.yesterdayStr,\n  user_message: item.userMessage || '',\n  message_kind: item.messageKind || 'text',\n  today_note: item.todayNote || 'нет данных',\n  yesterday_note: item.yesterdayNote || 'нет данных',\n  recent_tasks: item.recentTasks || 'нет данных',\n  recent_ideas: item.recentIdeas || 'нет данных',\n  recent_projects: item.recentProjects || 'нет данных',\n  user_memory: item.userMemory || 'нет данных',\n};\n\nconst systemPrompt = `Ты главный оркестратор персонального Telegram-ассистента Семёна.\n\nТвои обязанности:\n- понять, что хочет пользователь;\n- если не хватает контекста, СНАЧАЛА идти читать/искать в Obsidian через tools;\n- если пользователь просит что-то записать, выбрать нужную папку и записать это в Obsidian через tools;\n- если ты видишь важное устойчивое знание о пользователе, проекте, задаче, обязательстве или идее, сохранить это в Obsidian;\n- при необходимости создать reminder через reminder_upsert;\n- отвечать коротко, по делу, без лишней мотивационной болтовни.\n\nУ тебя есть широкий доступ к vault внутри /obsidian: ты можешь читать и писать любые файлы внутри этого vault через tools.\nПредпочтительные папки:\n- /obsidian/Daily Notes/\n- /obsidian/Tasks/\n- /obsidian/Ideas/\n- /obsidian/Projects/\n- /obsidian/System/User Memory/\n\nКогда нужно использовать tools:\n- пользователь говорит «посмотри, что я писал/мы обсуждали/что там по проекту»;\n- в сообщении есть местоимения или ссылки без явного контекста («это», «тот проект», «по резюме»);\n- нужно проверить, не записано ли уже что-то;\n- нужно сохранить важное знание, идею, проектную информацию, задачу, дневниковую запись.\n\nФинальный ответ, когда tools больше не нужны, верни ТОЛЬКО JSON-объект без markdown и без пояснений:\n{\n  \"reply\": \"сообщение пользователю\",\n  \"schedule\": {\"datetime\": \"RFC3339 или null\", \"message\": \"текст или null\"} | null,\n  \"summary\": \"что было сделано кратко\"\n}\n\nЕсли напоминание уже было создано через reminder_upsert, schedule можно вернуть null.\nЕсли напоминание нужно через старый встроенный механизм, верни schedule с RFC3339 (+03:00).\nНе выдумывай несуществующие факты.`;\n\nconst messages = [\n  { role: 'system', content: systemPrompt },\n  { role: 'user', content: JSON.stringify(liteContext, null, 2) }\n];\n\nlet toolCallsUsed = 0;\nlet lastText = '';\nconst toolAudit = [];\n\nfor (let i = 0; i < MAX_TOOL_ITERS; i++) {\n  const response = await apiRequest({\n    model: MODEL,\n    temperature: 0.2,\n    tools,\n    tool_choice: 'auto',\n    messages,\n  });\n  const message = response?.choices?.[0]?.message || {};\n  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];\n  if (toolCalls.length) {\n    toolCallsUsed += toolCalls.length;\n    messages.push({ role: 'assistant', content: message.content || '', tool_calls: toolCalls });\n    for (const call of toolCalls) {\n      let args = {};\n      try { args = JSON.parse(call.function?.arguments || '{}'); } catch (e) { args = {}; }\n      let result;\n      try {\n        result = await runTool(call.function.name, args);\n        appendActionLog({ execution: 'orchestrator', tool: call.function.name, args, result: summarizeToolResult(call.function.name, result) });\n        toolAudit.push({ tool: call.function.name, args, result: summarizeToolResult(call.function.name, result) });\n      } catch (e) {\n        result = { error: e.message };\n        appendActionLog({ execution: 'orchestrator', tool: call.function.name, args, error: e.message });\n        toolAudit.push({ tool: call.function.name, args, result });\n      }\n      messages.push({\n        role: 'tool',\n        tool_call_id: call.id,\n        name: call.function.name,\n        content: JSON.stringify(result),\n      });\n    }\n    continue;\n  }\n  lastText = normalizeRawContent(message.content || '');\n  messages.push({ role: 'assistant', content: lastText });\n  break;\n}\n\nconst parsed = parseFinalJson(lastText) || {};\nconst fallbackReply = lastText && !lastText.trim().startsWith('{')\n  ? lastText.trim()\n  : 'Принял. Я обработал сообщение и зафиксировал нужный контекст.';\n\nlet schedule = null;\nif (parsed.schedule && parsed.schedule.datetime && parsed.schedule.message) {\n  let dt = String(parsed.schedule.datetime).trim().replace(' ', 'T');\n  if (/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(dt)) dt += ':00';\n  if (/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$/.test(dt)) dt += '+03:00';\n  if (Number.isFinite(Date.parse(dt))) {\n    schedule = { datetime: dt, message: String(parsed.schedule.message).trim() };\n  }\n}\n\nreturn [{\n  json: {\n    chatId: Number(item.chatId || $env.TELEGRAM_CHAT_ID),\n    reply: String(parsed.reply || fallbackReply || 'Ок.'),\n    schedule,\n    toolAudit,\n    orchestratorSummary: parsed.summary || null,\n    toolCallsUsed,\n  }\n}];\n};\n\nreturn main();"
+      },
+      "id": "14",
+      "name": "Orchestrator Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2144,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "source": "parameter",
+        "workflowJson": "={\"name\": \"genspark_delegate_v1\", \"nodes\": [{\"id\": \"58ce3677-79e6-45d0-bfe3-80e832eb22d7\", \"name\": \"When Executed by Another Workflow\", \"type\": \"n8n-nodes-base.executeWorkflowTrigger\", \"typeVersion\": 1.1, \"position\": [-520, 0], \"parameters\": {\"workflowInputs\": {\"values\": [{\"name\": \"task_kind\"}, {\"name\": \"user_request\"}, {\"name\": \"context_json\"}, {\"name\": \"success_criteria_json\"}, {\"name\": \"model\"}, {\"name\": \"endpoint\"}]}}}, {\"id\": \"44b37021-a46d-4303-9414-935f43069aba\", \"name\": \"Normalize Delegate Input\", \"type\": \"n8n-nodes-base.code\", \"typeVersion\": 2, \"position\": [-260, 0], \"parameters\": {\"jsCode\": \"const input = $json || {};\\nconst safeParse = (value, fallback) => {\\n  if (value === undefined || value === null || value === '') return fallback;\\n  if (typeof value === 'object') return value;\\n  try { return JSON.parse(value); } catch { return fallback; }\\n};\\n\\nconst context = safeParse(input.context_json, {});\\nconst successCriteria = safeParse(input.success_criteria_json, []);\\nconst taskKind = String(input.task_kind || 'assistant_improvement');\\nconst userRequest = String(input.user_request || '').trim();\\nconst endpoint = String(input.endpoint || $env.GENSPARK_CHAT_COMPLETIONS_URL || 'https://api.genspark.ai/chat/completions');\\nconst model = String(input.model || $env.GENSPARK_MODEL || 'gemini-2.5-pro');\\n\\nif (!userRequest) {\\n  return [{\\n    json: {\\n      status: 'needs_input',\\n      summary: 'Пустой запрос для Genspark delegate',\\n      artifacts: [],\\n      verification: { result: 'fail', tests_run: [] },\\n      next_action: 'Передай user_request в sub-workflow',\\n      delegate_meta: { task_kind: taskKind, delegated: false }\\n    }\\n  }];\\n}\\n\\nreturn [{\\n  json: {\\n    task_kind: taskKind,\\n    user_request: userRequest,\\n    context,\\n    success_criteria: Array.isArray(successCriteria) ? successCriteria : [String(successCriteria)],\\n    endpoint,\\n    model\\n  }\\n}];\"}}, {\"id\": \"36ff327b-38b4-4192-a157-bef7744d7e9c\", \"name\": \"Build Genspark Request\", \"type\": \"n8n-nodes-base.code\", \"typeVersion\": 2, \"position\": [0, 0], \"parameters\": {\"jsCode\": \"const item = $json;\\nconst system = [\\n  'Ты внешний engineering-agent для Telegram personal assistant на n8n.',\\n  'Работай как исполнитель задачи по улучшению ассистента.',\\n  'Отвечай только JSON-объектом.',\\n  'Схема ответа:',\\n  '{\\\"status\\\":\\\"done|needs_input|failed\\\",\\\"summary\\\":\\\"string\\\",\\\"artifacts\\\":[{\\\"type\\\":\\\"string\\\",\\\"path\\\":\\\"string\\\",\\\"description\\\":\\\"string\\\"}],\\\"verification\\\":{\\\"result\\\":\\\"pass|partial|fail\\\",\\\"tests_run\\\":[\\\"string\\\"]},\\\"next_action\\\":\\\"string|null\\\"}',\\n  'Если данных не хватает — верни status=needs_input.',\\n  'Если задачу нельзя завершить полностью без внешнего действия — верни partial/fail и опиши next_action.',\\n  'Не используй markdown fences.'\\n].join(' ');\\n\\nconst userPayload = {\\n  task_kind: item.task_kind,\\n  user_request: item.user_request,\\n  success_criteria: item.success_criteria,\\n  context: item.context,\\n};\\n\\nconst requestBody = {\\n  model: item.model,\\n  temperature: 0.2,\\n  response_format: { type: 'json_object' },\\n  messages: [\\n    { role: 'system', content: system },\\n    { role: 'user', content: JSON.stringify(userPayload) }\\n  ]\\n};\\n\\nreturn [{\\n  json: {\\n    endpoint: item.endpoint,\\n    requestBody,\\n    task_kind: item.task_kind,\\n    user_request: item.user_request,\\n    success_criteria: item.success_criteria,\\n    context: item.context\\n  }\\n}];\"}}, {\"id\": \"210efe28-b279-470d-a3eb-dc2be7abeb7e\", \"name\": \"Call Genspark Delegate\", \"type\": \"n8n-nodes-base.httpRequest\", \"typeVersion\": 4.2, \"position\": [280, 0], \"parameters\": {\"method\": \"POST\", \"url\": \"={{ $json.endpoint }}\", \"sendHeaders\": true, \"headerParameters\": {\"parameters\": [{\"name\": \"Authorization\", \"value\": \"={{ 'Bearer ' + $env.GENSPARK_API_KEY }}\"}, {\"name\": \"Content-Type\", \"value\": \"application/json\"}]}, \"sendBody\": true, \"contentType\": \"raw\", \"rawContentType\": \"application/json\", \"body\": \"={{ JSON.stringify($json.requestBody) }}\", \"options\": {\"timeout\": 120000}}}, {\"id\": \"5dce8d72-8b88-4a39-bebf-d47b303b1c4d\", \"name\": \"Parse Genspark Response\", \"type\": \"n8n-nodes-base.code\", \"typeVersion\": 2, \"position\": [560, 0], \"parameters\": {\"jsCode\": \"const raw = $json;\\nconst extract = () => {\\n  if (raw.choices?.[0]?.message?.content) return raw.choices[0].message.content;\\n  if (typeof raw.output_text === 'string') return raw.output_text;\\n  if (typeof raw.content === 'string') return raw.content;\\n  return JSON.stringify(raw);\\n};\\n\\nlet text = extract();\\ntext = String(text || '').trim();\\ntext = text.replace(/^```json\\\\s*/i, '').replace(/^```/, '').replace(/```$/, '').trim();\\n\\nlet parsed;\\ntry {\\n  parsed = JSON.parse(text);\\n} catch (e) {\\n  parsed = {\\n    status: 'failed',\\n    summary: 'Не удалось распарсить ответ Genspark как JSON',\\n    artifacts: [],\\n    verification: { result: 'fail', tests_run: [] },\\n    next_action: 'Проверить endpoint/формат ответа Genspark',\\n    raw_text: text.slice(0, 4000)\\n  };\\n}\\n\\nif (!parsed.status) parsed.status = 'done';\\nif (!parsed.summary) parsed.summary = 'Genspark delegate вернул ответ без summary';\\nif (!Array.isArray(parsed.artifacts)) parsed.artifacts = [];\\nif (!parsed.verification || typeof parsed.verification !== 'object') parsed.verification = { result: 'partial', tests_run: [] };\\nif (!Array.isArray(parsed.verification.tests_run)) parsed.verification.tests_run = [];\\nif (!('next_action' in parsed)) parsed.next_action = null;\\n\\nreturn [{ json: parsed }];\"}}, {\"id\": \"f3f03e46-115a-401a-a566-a682c4942899\", \"name\": \"Finalize Delegate Payload\", \"type\": \"n8n-nodes-base.set\", \"typeVersion\": 3.4, \"position\": [820, 0], \"parameters\": {\"options\": {}, \"assignments\": {\"assignments\": [{\"id\": \"8edcc203-be4a-4b4e-8f61-dc58cb2d57cc\", \"name\": \"delegate_provider\", \"type\": \"string\", \"value\": \"genspark\"}, {\"id\": \"e2c0dbbc-fa5a-4fbe-991b-d16a32cf54b8\", \"name\": \"delegate_version\", \"type\": \"string\", \"value\": \"v1\"}]}}}], \"connections\": {\"When Executed by Another Workflow\": {\"main\": [[{\"node\": \"Normalize Delegate Input\", \"type\": \"main\", \"index\": 0}]]}, \"Normalize Delegate Input\": {\"main\": [[{\"node\": \"Build Genspark Request\", \"type\": \"main\", \"index\": 0}]]}, \"Build Genspark Request\": {\"main\": [[{\"node\": \"Call Genspark Delegate\", \"type\": \"main\", \"index\": 0}]]}, \"Call Genspark Delegate\": {\"main\": [[{\"node\": \"Parse Genspark Response\", \"type\": \"main\", \"index\": 0}]]}, \"Parse Genspark Response\": {\"main\": [[{\"node\": \"Finalize Delegate Payload\", \"type\": \"main\", \"index\": 0}]]}}, \"settings\": {\"executionOrder\": \"v1\", \"timezone\": \"Europe/Moscow\"}, \"pinData\": {\"When Executed by Another Workflow\": [{\"json\": {\"task_kind\": \"debug\", \"user_request\": \"Почини Telegram reply node в main workflow\", \"context_json\": \"{\\\"workflow_id\\\":\\\"KJBp4f0aPCZWAsjV\\\",\\\"repo\\\":\\\"ErmakovSemen/personal_assistant\\\"}\", \"success_criteria_json\": \"[\\\"reply node больше не падает\\\",\\\"smoke test проходит\\\"]\"}}]}}",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "task_kind": "={{ 'assistant_improvement' }}",
+            "user_request": "={{ $json.userMessage || '' }}",
+            "context_json": "={{ JSON.stringify({ workflow_id: 'KJBp4f0aPCZWAsjV', chat_id: $json.chatId || null, date: $json.today || null, notes: { today: $json.todayNote || '', yesterday: $json.yesterdayNote || '', tasks: $json.tasks || '', ideas: $json.ideas || '', projects: $json.projects || '', memory: $json.userMemory || '' } }) }}",
+            "success_criteria_json": "={{ JSON.stringify(['вернуть короткий статус', 'если есть изменения — перечислить артефакты', 'если нужны ручные шаги — явно описать next_action']) }}",
+            "model": "={{ $env.GENSPARK_MODEL || 'gemini-2.5-pro' }}",
+            "endpoint": "={{ $env.GENSPARK_CHAT_COMPLETIONS_URL || 'https://api.genspark.ai/chat/completions' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "task_kind",
+              "displayName": "task_kind",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "user_request",
+              "displayName": "user_request",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "context_json",
+              "displayName": "context_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "success_criteria_json",
+              "displayName": "success_criteria_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "model",
+              "displayName": "model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "endpoint",
+              "displayName": "endpoint",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "genspark_run_delegate_subworkflow",
+      "name": "Run Genspark Delegate",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2400,
+        192
+      ]
+    },
+    {
+      "parameters": {
         "resume": "specificTime",
         "dateTime": "={{ $json.schedule.datetime }}"
       },
@@ -260,6 +364,41 @@
         720
       ],
       "webhookId": "88a0859a-2bd0-4682-9097-158bfb226375"
+    },
+    {
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "genspark_reply_text",
+              "name": "reply",
+              "type": "string",
+              "value": "={{ (() => { const status = String($json.status || 'done'); const summary = String($json.summary || 'Готово').trim(); const verification = $json.verification?.result ? `\nПроверка: ${$json.verification.result}` : ''; const artifacts = Array.isArray($json.artifacts) && $json.artifacts.length ? '\nАртефакты:\n' + $json.artifacts.map((a) => `- ${a.path || a.description || a.type || 'artifact'}`).join('\n') : ''; const next = $json.next_action ? `\nДальше: ${$json.next_action}` : ''; return `Статус: ${status}\n${summary}${verification}${artifacts}${next}`.trim(); })() }}"
+            },
+            {
+              "id": "genspark_reply_chatid",
+              "name": "chatId",
+              "type": "number",
+              "value": "={{ $('Read Notes').first().json.chatId || $env.TELEGRAM_CHAT_ID }}"
+            },
+            {
+              "id": "genspark_delegate_status",
+              "name": "delegateStatus",
+              "type": "string",
+              "value": "={{ $json.status || 'done' }}"
+            }
+          ]
+        }
+      },
+      "id": "genspark_format_delegate_reply",
+      "name": "Format Delegate Reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2656,
+        192
+      ]
     },
     {
       "parameters": {
@@ -278,6 +417,25 @@
       "position": [
         2656,
         752
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $env.TELEGRAM_BOT_TOKEN + '/sendMessage' }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({chat_id:Number($json.chatId || $env.TELEGRAM_CHAT_ID), text: (typeof $json.reply === 'string' && $json.reply.trim()) ? $json.reply : 'Ок.'}) }}",
+        "options": {}
+      },
+      "id": "12",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3392,
+        304
       ]
     }
   ],
@@ -370,7 +528,7 @@
       "main": [
         [
           {
-            "node": "Orchestrator Agent",
+            "node": "If Genspark Delegate?",
             "type": "main",
             "index": 0
           }
@@ -417,7 +575,47 @@
       ]
     },
     "Send Reply": {},
-    "Send Scheduled Reply": {}
+    "Send Scheduled Reply": {},
+    "If Genspark Delegate?": {
+      "main": [
+        [
+          {
+            "node": "Run Genspark Delegate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Orchestrator Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Genspark Delegate": {
+      "main": [
+        [
+          {
+            "node": "Format Delegate Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Delegate Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1",
