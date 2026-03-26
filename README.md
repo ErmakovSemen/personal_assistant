@@ -7,6 +7,9 @@
 - `docs/n8n_telegram_coach_handoff_2026-03-25.md` — исходный handoff по серверу, инфраструктуре и текущему состоянию системы.
 - `docs/n8n_full_access_orchestrator_upgrade_2026-03-26.md` — описание апгрейда оркестратора с полным read/write доступом к vault внутри `/obsidian`, текущие результаты и известные проблемы.
 - `workflows/main/main_KJBp4f0aPCZWAsjV_after_full_access_orchestrator.json` — экспорт обновлённого main workflow для импорта в n8n.
+- `workflows/subflows/genspark_delegate_v1.json` — отдельный sub-workflow для делегирования meta-задач внешнему engineering-агенту через Genspark API.
+- `docs/genspark_delegate_v1.md` — краткая спецификация входов, выходов и интеграции этого sub-workflow.
+- `docs/main_orchestrator_genspark_route.md` — минимальная схема врезки этого подграфа в главный оркестратор.
 
 ## Что реализовано в апгрейде 2026-03-26
 
@@ -27,4 +30,6 @@
 
 ## Следующий рекомендуемый шаг
 
-После импорта workflow — починить финальный Telegram reply step и прогнать повторный live test записи заметки в Obsidian.
+1. Импортировать `workflows/subflows/genspark_delegate_v1.json`.
+2. Подключить его к главному оркестратору по intent-ветке `assistant_improvement/debug_workflow/prompt_update`.
+3. Затем починить финальный Telegram reply step и прогнать повторный live test записи заметки в Obsidian.

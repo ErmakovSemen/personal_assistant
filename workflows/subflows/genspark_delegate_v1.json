@@ -1,0 +1,214 @@
+{
+  "name": "genspark_delegate_v1",
+  "nodes": [
+    {
+      "id": "58ce3677-79e6-45d0-bfe3-80e832eb22d7",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -520,
+        0
+      ],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "task_kind"
+            },
+            {
+              "name": "user_request"
+            },
+            {
+              "name": "context_json"
+            },
+            {
+              "name": "success_criteria_json"
+            },
+            {
+              "name": "model"
+            },
+            {
+              "name": "endpoint"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "44b37021-a46d-4303-9414-935f43069aba",
+      "name": "Normalize Delegate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const input = $json || {};\nconst safeParse = (value, fallback) => {\n  if (value === undefined || value === null || value === '') return fallback;\n  if (typeof value === 'object') return value;\n  try { return JSON.parse(value); } catch { return fallback; }\n};\n\nconst context = safeParse(input.context_json, {});\nconst successCriteria = safeParse(input.success_criteria_json, []);\nconst taskKind = String(input.task_kind || 'assistant_improvement');\nconst userRequest = String(input.user_request || '').trim();\nconst endpoint = String(input.endpoint || $env.GENSPARK_CHAT_COMPLETIONS_URL || 'https://api.genspark.ai/chat/completions');\nconst model = String(input.model || $env.GENSPARK_MODEL || 'gemini-2.5-pro');\n\nif (!userRequest) {\n  return [{\n    json: {\n      status: 'needs_input',\n      summary: 'Пустой запрос для Genspark delegate',\n      artifacts: [],\n      verification: { result: 'fail', tests_run: [] },\n      next_action: 'Передай user_request в sub-workflow',\n      delegate_meta: { task_kind: taskKind, delegated: false }\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    task_kind: taskKind,\n    user_request: userRequest,\n    context,\n    success_criteria: Array.isArray(successCriteria) ? successCriteria : [String(successCriteria)],\n    endpoint,\n    model\n  }\n}];"
+      }
+    },
+    {
+      "id": "36ff327b-38b4-4192-a157-bef7744d7e9c",
+      "name": "Build Genspark Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const item = $json;\nconst system = [\n  'Ты внешний engineering-agent для Telegram personal assistant на n8n.',\n  'Работай как исполнитель задачи по улучшению ассистента.',\n  'Отвечай только JSON-объектом.',\n  'Схема ответа:',\n  '{\"status\":\"done|needs_input|failed\",\"summary\":\"string\",\"artifacts\":[{\"type\":\"string\",\"path\":\"string\",\"description\":\"string\"}],\"verification\":{\"result\":\"pass|partial|fail\",\"tests_run\":[\"string\"]},\"next_action\":\"string|null\"}',\n  'Если данных не хватает — верни status=needs_input.',\n  'Если задачу нельзя завершить полностью без внешнего действия — верни partial/fail и опиши next_action.',\n  'Не используй markdown fences.'\n].join(' ');\n\nconst userPayload = {\n  task_kind: item.task_kind,\n  user_request: item.user_request,\n  success_criteria: item.success_criteria,\n  context: item.context,\n};\n\nconst requestBody = {\n  model: item.model,\n  temperature: 0.2,\n  response_format: { type: 'json_object' },\n  messages: [\n    { role: 'system', content: system },\n    { role: 'user', content: JSON.stringify(userPayload) }\n  ]\n};\n\nreturn [{\n  json: {\n    endpoint: item.endpoint,\n    requestBody,\n    task_kind: item.task_kind,\n    user_request: item.user_request,\n    success_criteria: item.success_criteria,\n    context: item.context\n  }\n}];"
+      }
+    },
+    {
+      "id": "210efe28-b279-470d-a3eb-dc2be7abeb7e",
+      "name": "Call Genspark Delegate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.endpoint }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GENSPARK_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "5dce8d72-8b88-4a39-bebf-d47b303b1c4d",
+      "name": "Parse Genspark Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const raw = $json;\nconst extract = () => {\n  if (raw.choices?.[0]?.message?.content) return raw.choices[0].message.content;\n  if (typeof raw.output_text === 'string') return raw.output_text;\n  if (typeof raw.content === 'string') return raw.content;\n  return JSON.stringify(raw);\n};\n\nlet text = extract();\ntext = String(text || '').trim();\ntext = text.replace(/^```json\\s*/i, '').replace(/^```/, '').replace(/```$/, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(text);\n} catch (e) {\n  parsed = {\n    status: 'failed',\n    summary: 'Не удалось распарсить ответ Genspark как JSON',\n    artifacts: [],\n    verification: { result: 'fail', tests_run: [] },\n    next_action: 'Проверить endpoint/формат ответа Genspark',\n    raw_text: text.slice(0, 4000)\n  };\n}\n\nif (!parsed.status) parsed.status = 'done';\nif (!parsed.summary) parsed.summary = 'Genspark delegate вернул ответ без summary';\nif (!Array.isArray(parsed.artifacts)) parsed.artifacts = [];\nif (!parsed.verification || typeof parsed.verification !== 'object') parsed.verification = { result: 'partial', tests_run: [] };\nif (!Array.isArray(parsed.verification.tests_run)) parsed.verification.tests_run = [];\nif (!('next_action' in parsed)) parsed.next_action = null;\n\nreturn [{ json: parsed }];"
+      }
+    },
+    {
+      "id": "f3f03e46-115a-401a-a566-a682c4942899",
+      "name": "Finalize Delegate Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        820,
+        0
+      ],
+      "parameters": {
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8edcc203-be4a-4b4e-8f61-dc58cb2d57cc",
+              "name": "delegate_provider",
+              "type": "string",
+              "value": "genspark"
+            },
+            {
+              "id": "e2c0dbbc-fa5a-4fbe-991b-d16a32cf54b8",
+              "name": "delegate_version",
+              "type": "string",
+              "value": "v1"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Normalize Delegate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Delegate Input": {
+      "main": [
+        [
+          {
+            "node": "Build Genspark Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Genspark Request": {
+      "main": [
+        [
+          {
+            "node": "Call Genspark Delegate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Genspark Delegate": {
+      "main": [
+        [
+          {
+            "node": "Parse Genspark Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Genspark Response": {
+      "main": [
+        [
+          {
+            "node": "Finalize Delegate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Moscow"
+  },
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "task_kind": "debug",
+          "user_request": "Почини Telegram reply node в main workflow",
+          "context_json": "{\"workflow_id\":\"KJBp4f0aPCZWAsjV\",\"repo\":\"ErmakovSemen/personal_assistant\"}",
+          "success_criteria_json": "[\"reply node больше не падает\",\"smoke test проходит\"]"
+        }
+      }
+    ]
+  }
+}
